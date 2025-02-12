@@ -1,0 +1,125 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="`future_queue` provides ways to run several futures:"><title>future_queue - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="future_queue" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.1 (e71f9a9a9 2025-01-27)" data-channel="1.84.1" data-search-js="search-92e6798f.js" data-settings-js="settings-0f613d39.js" ><script src="../static.files/storage-59e33391.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../future_queue/index.html">future_<wbr>queue</a><span class="version">0.4.0</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#about-this-crate" title="About this crate">About this crate</a><ul><li><a href="#1-the-future_queue-adaptor" title="1. The `future_queue` adaptor">1. The <code>future_queue</code> adaptor</a></li><li><a href="#2-the-future_queue_grouped-adaptor" title="2. The `future_queue_grouped` adaptor">2. The <code>future_queue_grouped</code> adaptor</a></li></ul></li><li><a href="#minimum-supported-rust-version-msrv" title="Minimum supported Rust version (MSRV)">Minimum supported Rust version (MSRV)</a></li><li><a href="#notes" title="Notes">Notes</a></li></ul><h3><a href="#modules">Crate Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>future_queue</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/future_queue/lib.rs.html#4-308">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p><code>future_queue</code> provides ways to run several futures:</p>
+<ul>
+<li>concurrently</li>
+<li>in the order they’re spawned</li>
+<li>with global limits</li>
+<li>and with an optional group specified for each future, with its own limits.</li>
+</ul>
+<p>This crate is part of the <a href="https://github.com/nextest-rs">nextest organization</a> on GitHub, and
+is designed to serve the needs of <a href="https://nexte.st">cargo-nextest</a>.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Async programming in Rust often uses an adaptor called
+<a href="https://docs.rs/futures/latest/futures/stream/trait.StreamExt.html#method.buffer_unordered"><code>buffer_unordered</code></a>:
+this adaptor takes a stream of futures<sup id="fnref1"><a href="#fn1">1</a></sup>, and executes all the futures limited to a maximum
+amount of concurrency.</p>
+<ul>
+<li>Futures are started in the order the stream returns them in.</li>
+<li>Once started, futures are polled simultaneously, and completed future outputs are returned in
+arbitrary order (hence the <code>unordered</code>).</li>
+</ul>
+<p>Common use cases for <code>buffer_unordered</code> include:</p>
+<ul>
+<li>Sending network requests concurrently, but limiting the amount of concurrency to avoid
+overwhelming the remote server.</li>
+<li>Running tests with a tool like <a href="https://nexte.st">cargo-nextest</a>.</li>
+</ul>
+<p><code>buffer_unordered</code> works well for many use cases. However, one issue with it is that it treats
+all futures as equally taxing: there’s no way to say that some futures consume more resources
+than others, or that some subsets of futures should be mutually excluded from others.</p>
+<p>For nextest in particular, some tests can be much heavier than others, and fewer of those tests
+should be run simultaneously. Also, some tests need to be mutually excluded from others, or
+other concurrency limits placed on them.</p>
+<h2 id="about-this-crate"><a class="doc-anchor" href="#about-this-crate">§</a>About this crate</h2>
+<p>This crate provides two adaptors on streams.</p>
+<h3 id="1-the-future_queue-adaptor"><a class="doc-anchor" href="#1-the-future_queue-adaptor">§</a>1. The <code>future_queue</code> adaptor</h3>
+<p>The <a href="trait.StreamExt.html#method.future_queue" title="method future_queue::StreamExt::future_queue"><code>future_queue</code></a> adaptor can run several futures simultaneously,
+limiting the concurrency to a maximum <em>weight</em>.</p>
+<p>Rather than taking a stream of futures, this adaptor takes a stream of
+<code>(usize, F)</code> pairs, where the <code>usize</code> indicates the weight of each future,
+and <code>F</code> is <code>FnOnce(FutureQueueContext) -&gt; impl Future</code>. This adaptor will
+schedule and buffer futures to be run until queueing the next future will
+exceed the maximum weight.</p>
+<ul>
+<li>The maximum weight is never exceeded while futures are being run.</li>
+<li>If the weight of an individual future is greater than the maximum weight, its weight will be
+set to the maximum weight.</li>
+</ul>
+<p>Once all possible futures are scheduled, this adaptor will wait until some of the currently
+executing futures complete, and the current weight of running futures drops below the maximum
+weight, before scheduling new futures.</p>
+<p>The weight of a future can be zero, in which case it doesn’t count towards the maximum weight.</p>
+<p>If all weights are 1, then <code>future_queue</code> is exactly the same as <code>buffer_unordered</code>.</p>
+<h4 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>futures::{channel::oneshot, stream, StreamExt <span class="kw">as _</span>};
+<span class="kw">use </span>future_queue::{StreamExt <span class="kw">as _</span>};
+
+<span class="kw">let </span>(send_one, recv_one) = oneshot::channel();
+<span class="kw">let </span>(send_two, recv_two) = oneshot::channel();
+
+<span class="kw">let </span>stream_of_futures = stream::iter(
+    <span class="macro">vec!</span>[(<span class="number">1</span>, recv_one), (<span class="number">2</span>, recv_two)],
+).map(|(weight, future)| {
+    (weight, <span class="kw">move </span>|_cx| future)
+});
+<span class="kw">let </span><span class="kw-2">mut </span>queue = stream_of_futures.future_queue(<span class="number">10</span>);
+
+send_two.send(<span class="string">"hello"</span>)<span class="question-mark">?</span>;
+<span class="macro">assert_eq!</span>(queue.next().<span class="kw">await</span>, <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(<span class="string">"hello"</span>)));
+
+send_one.send(<span class="string">"world"</span>)<span class="question-mark">?</span>;
+<span class="macro">assert_eq!</span>(queue.next().<span class="kw">await</span>, <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(<span class="string">"world"</span>)));
+
+<span class="macro">assert_eq!</span>(queue.next().<span class="kw">await</span>, <span class="prelude-val">None</span>);</code></pre></div>
+<h3 id="2-the-future_queue_grouped-adaptor"><a class="doc-anchor" href="#2-the-future_queue_grouped-adaptor">§</a>2. The <code>future_queue_grouped</code> adaptor</h3>
+<p>The <a href="trait.StreamExt.html#method.future_queue_grouped" title="method future_queue::StreamExt::future_queue_grouped"><code>future_queue_grouped</code></a> adaptor is like <code>future_queue</code>,
+except it is possible to specify an optional <em>group</em> for each future. Each group has a maximum
+weight, and a future will only be scheduled if both the maximum weight and the group weight
+aren’t exceeded.</p>
+<p>The adaptor is as fair as possible under the given constraints: it will schedule futures in the
+order they’re returned by the stream, without doing any reordering based on weight. When a
+future from a group completes, queued up futures in this group will be preferentially scheduled
+before any other futures from the provided stream.</p>
+<p>Like with <a href="trait.StreamExt.html#method.future_queue" title="method future_queue::StreamExt::future_queue"><code>future_queue</code></a>:</p>
+<ul>
+<li>The maximum global and group weights is never exceeded while futures are being run.</li>
+<li>While accounting against global weights, if the weight of an individual future is greater than
+the maximum weight, its weight will be set to the maximum weight.</li>
+<li><em>If a future belongs to a group:</em> While accounting against the group weight, if its weight is
+greater than the maximum group weight, its weight will be set to the maximum group weight.</li>
+</ul>
+<h4 id="examples-1"><a class="doc-anchor" href="#examples-1">§</a>Examples</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>futures::{channel::oneshot, stream, StreamExt <span class="kw">as _</span>};
+<span class="kw">use </span>future_queue::{FutureQueueContext, StreamExt <span class="kw">as _</span>};
+
+<span class="kw">let </span>(send_one, recv_one) = oneshot::channel();
+<span class="kw">let </span>(send_two, recv_two) = oneshot::channel();
+
+<span class="kw">let </span>stream_of_futures = stream::iter(
+    <span class="macro">vec!</span>[
+        (<span class="number">1</span>, <span class="prelude-val">Some</span>(<span class="string">"group1"</span>), recv_one),
+        (<span class="number">2</span>, <span class="prelude-val">None</span>, recv_two),
+    ],
+).map(|(weight, group, future)| {
+    (weight, group, <span class="kw">move </span>|_cx| future)
+});
+<span class="kw">let </span><span class="kw-2">mut </span>queue = stream_of_futures.future_queue_grouped(<span class="number">10</span>, [(<span class="string">"group1"</span>, <span class="number">5</span>)]);
+
+send_two.send(<span class="string">"hello"</span>)<span class="question-mark">?</span>;
+<span class="macro">assert_eq!</span>(queue.next().<span class="kw">await</span>, <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(<span class="string">"hello"</span>)));
+
+send_one.send(<span class="string">"world"</span>)<span class="question-mark">?</span>;
+<span class="macro">assert_eq!</span>(queue.next().<span class="kw">await</span>, <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(<span class="string">"world"</span>)));
+
+<span class="macro">assert_eq!</span>(queue.next().<span class="kw">await</span>, <span class="prelude-val">None</span>);</code></pre></div>
+<h2 id="minimum-supported-rust-version-msrv"><a class="doc-anchor" href="#minimum-supported-rust-version-msrv">§</a>Minimum supported Rust version (MSRV)</h2>
+<p>The minimum supported Rust version is <strong>Rust 1.70.</strong> At any time, at least the last six months
+of Rust stable releases are supported.</p>
+<p>While this crate is a pre-release (0.x.x) it may have its MSRV bumped in a patch release. Once
+this crate has reached 1.x, any MSRV bump will be accompanied with a new minor version.</p>
+<h2 id="notes"><a class="doc-anchor" href="#notes">§</a>Notes</h2>
+<p>This crate used to be called <code>buffer-unordered-weighted</code>. It was renamed to <code>future-queue</code> to be
+more descriptive about what the crate does rather than how it’s implemented.</p>
+<div class="footnotes"><hr><ol><li id="fn1"><p>This adaptor takes a stream of futures for maximum generality. In practice this is often
+an <em>iterator</em> of futures, converted over using
+<a href="https://docs.rs/futures/latest/futures/stream/fn.iter.html"><code>stream::iter</code></a>.&nbsp;<a href="#fnref1">↩</a></p></li></ol></div></div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="mod" href="traits/index.html" title="mod future_queue::traits">traits</a></div><div class="desc docblock-short">Traits to aid in type definitions.</div></li></ul><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="struct" href="struct.FutureQueue.html" title="struct future_queue::FutureQueue">Future<wbr>Queue</a></div><div class="desc docblock-short">Stream for the <a href="trait.StreamExt.html#method.future_queue" title="method future_queue::StreamExt::future_queue"><code>future_queue</code></a> method.</div></li><li><div class="item-name"><a class="struct" href="struct.FutureQueueContext.html" title="struct future_queue::FutureQueueContext">Future<wbr>Queue<wbr>Context</a></div><div class="desc docblock-short">Context for a function in a <a href="struct.FutureQueue.html" title="struct future_queue::FutureQueue"><code>FutureQueue</code></a> or <a href="struct.FutureQueueGrouped.html" title="struct future_queue::FutureQueueGrouped"><code>FutureQueueGrouped</code></a>.</div></li><li><div class="item-name"><a class="struct" href="struct.FutureQueueGrouped.html" title="struct future_queue::FutureQueueGrouped">Future<wbr>Queue<wbr>Grouped</a></div><div class="desc docblock-short">Stream for the <a href="trait.StreamExt.html#method.future_queue_grouped" title="method future_queue::StreamExt::future_queue_grouped"><code>future_queue_grouped</code></a> method.</div></li></ul><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="trait" href="trait.StreamExt.html" title="trait future_queue::StreamExt">Stream<wbr>Ext</a></div><div class="desc docblock-short">An extension trait for <code>Stream</code>s that provides
+<a href="trait.StreamExt.html#method.future_queue" title="method future_queue::StreamExt::future_queue"><code>future_queue</code></a>.</div></li></ul></section></div></main></body></html>
